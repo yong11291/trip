@@ -1,0 +1,6 @@
+{
+  "name": "여행 사진 저장소",
+  "description": "여행별, 올린 사람별로 사진을 분류하여 Google Drive에 안전하게 업로드하고 공유하는 웹 애플리케이션",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
