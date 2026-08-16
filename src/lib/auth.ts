@@ -35,6 +35,34 @@ export const SCOPES = [
 let cachedAccessToken: string | null = null;
 let cachedUser: UserProfile | null = null;
 
+export function getCustomClientId(): string | null {
+  try {
+    return localStorage.getItem('trip_vault_custom_client_id');
+  } catch {
+    return null;
+  }
+}
+
+export function setCustomClientId(clientId: string) {
+  try {
+    if (clientId && clientId.trim().length > 0) {
+      localStorage.setItem('trip_vault_custom_client_id', clientId.trim());
+    } else {
+      localStorage.removeItem('trip_vault_custom_client_id');
+    }
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function getEffectiveClientId(): string {
+  const custom = getCustomClientId();
+  if (custom && custom.trim().length > 0) {
+    return custom.trim();
+  }
+  return appletConfig.oAuthClientId || '';
+}
+
 // Dynamic loader for Google Identity Services
 export function loadGoogleScript(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -92,7 +120,7 @@ export function googleSignIn(): Promise<{ user: UserProfile; accessToken: string
         throw new Error('Google 로그인 라이브러리를 초기화할 수 없습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
       }
 
-      const clientId = appletConfig.oAuthClientId;
+      const clientId = getEffectiveClientId();
       if (!clientId) {
         throw new Error('Google OAuth Client ID가 설정되어 있지 않습니다.');
       }

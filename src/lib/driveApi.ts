@@ -1,4 +1,13 @@
 import { TripFolder, UploaderFolder, DrivePhoto } from '../types';
+import {
+  getLocalTrips,
+  createLocalTrip,
+  deleteLocalTrip,
+  getLocalPhotos,
+  addLocalPhoto,
+  saveLocalPhotos,
+  saveLocalTrips,
+} from './localDriveStorage';
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
@@ -26,6 +35,13 @@ export async function getOrCreateFolder(
   parentId?: string,
   description?: string
 ): Promise<{ id: string; name: string; webViewLink?: string }> {
+  if (accessToken === 'demo_mode_token') {
+    return {
+      id: `local_folder_${folderName.replace(/\s+/g, '_')}`,
+      name: folderName,
+    };
+  }
+
   let query = `name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   if (parentId) {
     query += ` and '${parentId}' in parents`;
@@ -81,6 +97,9 @@ export async function getOrCreateFolder(
  * Ensure root '여행 사진 저장소' folder exists
  */
 export async function getAppRootFolder(accessToken: string): Promise<{ id: string; name: string; webViewLink?: string }> {
+  if (accessToken === 'demo_mode_token') {
+    return { id: 'local_root', name: APP_ROOT_FOLDER_NAME };
+  }
   return await getOrCreateFolder(accessToken, APP_ROOT_FOLDER_NAME, undefined, '여행 사진 저장소 웹앱에서 자동 생성된 여행 앨범 모음 폴더');
 }
 
@@ -88,6 +107,10 @@ export async function getAppRootFolder(accessToken: string): Promise<{ id: strin
  * Get all trip folders inside app root
  */
 export async function getTripFolders(accessToken: string): Promise<TripFolder[]> {
+  if (accessToken === 'demo_mode_token') {
+    return getLocalTrips();
+  }
+
   const root = await getAppRootFolder(accessToken);
   const query = `'${root.id}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,description,webViewLink,createdTime)&orderBy=createdTime desc&pageSize=100`;
@@ -147,6 +170,10 @@ export async function createTripFolder(
   tripName: string,
   description?: string
 ): Promise<TripFolder> {
+  if (accessToken === 'demo_mode_token') {
+    return createLocalTrip(tripName, description);
+  }
+
   const root = await getAppRootFolder(accessToken);
   const created = await getOrCreateFolder(accessToken, tripName.trim(), root.id, description);
   return {
@@ -164,6 +191,11 @@ export async function createTripFolder(
  * Delete a trip folder (Requires user confirmation)
  */
 export async function deleteTripFolder(accessToken: string, folderId: string): Promise<void> {
+  if (accessToken === 'demo_mode_token') {
+    deleteLocalTrip(folderId);
+    return;
+  }
+
   const res = await fetch(`${DRIVE_API_BASE}/files/${folderId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
@@ -183,6 +215,13 @@ export async function getOrCreateUploaderFolder(
   tripFolderId: string,
   uploaderName: string
 ): Promise<{ id: string; name: string; webViewLink?: string }> {
+  if (accessToken === 'demo_mode_token') {
+    return {
+      id: `local_uploader_${uploaderName.trim().replace(/\s+/g, '_')}`,
+      name: uploaderName.trim() || '익명 참여자',
+    };
+  }
+
   const cleanName = uploaderName.trim() || '익명 참여자';
   return await getOrCreateFolder(accessToken, cleanName, tripFolderId, `${cleanName} 님이 업로드한 사진 폴더`);
 }
@@ -191,6 +230,21 @@ export async function getOrCreateUploaderFolder(
  * Get all uploader folders inside a trip
  */
 export async function getTripUploaders(accessToken: string, tripFolderId: string): Promise<UploaderFolder[]> {
+  if (accessToken === 'demo_mode_token') {
+    const photos = getLocalPhotos().filter((p) => p.tripId === tripFolderId);
+    const uploaderMap = new Map<string, number>();
+    photos.forEach((p) => {
+      uploaderMap.set(p.uploaderName, (uploaderMap.get(p.uploaderName) || 0) + 1);
+    });
+    return Array.from(uploaderMap.entries()).map(([name, count]) => ({
+      id: `local_uploader_${name.replace(/\s+/g, '_')}`,
+      name,
+      tripFolderId,
+      photoCount: count,
+      createdTime: new Date().toISOString(),
+    }));
+  }
+
   const query = `'${tripFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
   const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&orderBy=name asc&pageSize=100`;
 
@@ -224,6 +278,30 @@ export async function uploadPhotoFile(
   uploaderName: string,
   onProgress?: (percent: number) => void
 ): Promise<DrivePhoto> {
+  if (accessToken === 'demo_mode_token') {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        if (onProgress) {
+          onProgress(50);
+          setTimeout(() => onProgress(100), 200);
+        }
+        // Extract tripId from folder or context if possible
+        const photo = addLocalPhoto(
+          folderId,
+          uploaderName,
+          file.name,
+          dataUrl,
+          file.type,
+          file.size
+        );
+        setTimeout(() => resolve(photo), 300);
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
   return new Promise((resolve, reject) => {
     const boundary = '-------TripPhotoVault' + Math.random().toString(36).substring(2);
     const delimiter = '\r\n--' + boundary + '\r\n';
@@ -308,6 +386,24 @@ export async function uploadPhotoFile(
  * Get all photos in a trip across all uploader subfolders
  */
 export async function getTripPhotos(accessToken: string, tripFolderId: string): Promise<{ photos: DrivePhoto[]; uploaders: UploaderFolder[] }> {
+  if (accessToken === 'demo_mode_token') {
+    const allPhotos = getLocalPhotos().filter((p) => p.tripId === tripFolderId);
+    const uploaderMap = new Map<string, number>();
+    allPhotos.forEach((p) => {
+      uploaderMap.set(p.uploaderName, (uploaderMap.get(p.uploaderName) || 0) + 1);
+    });
+
+    const uploaders: UploaderFolder[] = Array.from(uploaderMap.entries()).map(([name, count]) => ({
+      id: `local_uploader_${name.replace(/\s+/g, '_')}`,
+      name,
+      tripFolderId,
+      photoCount: count,
+      createdTime: new Date().toISOString(),
+    }));
+
+    return { photos: allPhotos, uploaders };
+  }
+
   // 1. Get all uploader folders in this trip
   const uploaders = await getTripUploaders(accessToken, tripFolderId);
 
@@ -368,6 +464,12 @@ export async function getTripPhotos(accessToken: string, tripFolderId: string): 
  * Delete a photo from Google Drive (Requires explicit confirmation modal)
  */
 export async function deleteDrivePhoto(accessToken: string, fileId: string): Promise<void> {
+  if (accessToken === 'demo_mode_token') {
+    const photos = getLocalPhotos().filter((p) => p.id !== fileId);
+    saveLocalPhotos(photos);
+    return;
+  }
+
   const res = await fetch(`${DRIVE_API_BASE}/files/${fileId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },

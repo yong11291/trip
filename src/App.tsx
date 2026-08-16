@@ -39,8 +39,20 @@ export default function App() {
         setIsAuthLoading(false);
       },
       () => {
-        setUser(null);
-        setToken(null);
+        // Check if demo session exists
+        const demoUser = sessionStorage.getItem('trip_vault_demo_user');
+        if (demoUser) {
+          try {
+            setUser(JSON.parse(demoUser));
+            setToken('demo_mode_token');
+          } catch {
+            setUser(null);
+            setToken(null);
+          }
+        } else {
+          setUser(null);
+          setToken(null);
+        }
         setIsAuthLoading(false);
       }
     );
@@ -52,7 +64,7 @@ export default function App() {
     };
   }, []);
 
-  // Fetch trips from Google Drive
+  // Fetch trips from Google Drive or Local Storage
   const fetchTrips = useCallback(async () => {
     if (!token) return;
     setIsLoadingTrips(true);
@@ -98,6 +110,7 @@ export default function App() {
     try {
       const result = await googleSignIn();
       if (result) {
+        sessionStorage.removeItem('trip_vault_demo_user');
         setUser({
           uid: result.user.uid,
           displayName: result.user.displayName,
@@ -124,9 +137,24 @@ export default function App() {
     }
   };
 
+  // Start Instant Demo Mode
+  const handleStartDemoMode = () => {
+    const demoProfile: UserProfile = {
+      uid: 'demo_local_user',
+      displayName: '로컬 체험 여행자',
+      email: 'local-demo@device',
+      photoURL: null,
+    };
+    sessionStorage.setItem('trip_vault_demo_user', JSON.stringify(demoProfile));
+    setUser(demoProfile);
+    setToken('demo_mode_token');
+    setError(null);
+  };
+
   // Sign Out Handler
   const handleSignOut = async () => {
     try {
+      sessionStorage.removeItem('trip_vault_demo_user');
       await logout();
       setUser(null);
       setToken(null);
@@ -160,6 +188,8 @@ export default function App() {
     }
   };
 
+  const isDemo = token === 'demo_mode_token';
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-100 selection:text-blue-900">
       {/* Top Navigation */}
@@ -172,6 +202,22 @@ export default function App() {
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+        {/* Demo Mode Notice Banner */}
+        {isDemo && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-900 text-xs sm:text-sm shadow-xs animate-fade-in">
+            <div className="flex items-center gap-2.5">
+              <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded font-bold text-xs">로컬 체험 모드</span>
+              <span>현재 브라우저 로컬 저장소로 작동 중입니다. 언제든지 우측 상단에서 <strong>Google 로그인</strong>으로 전환하여 Drive에 백업할 수 있습니다.</span>
+            </div>
+            <button
+              onClick={handleSignIn}
+              className="self-start sm:self-auto px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors shrink-0"
+            >
+              Google Drive 동기화 연결
+            </button>
+          </div>
+        )}
+
         {/* Global Error Banner */}
         {error && (
           <div className="mb-6 p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start justify-between gap-3 text-rose-800 text-xs sm:text-sm shadow-xs animate-fade-in">
@@ -199,7 +245,12 @@ export default function App() {
           </div>
         ) : !token ? (
           /* Sign In Screen */
-          <SignInPrompt onSignIn={handleSignIn} isLoading={isSigningIn} />
+          <SignInPrompt
+            onSignIn={handleSignIn}
+            onStartDemoMode={handleStartDemoMode}
+            isLoading={isSigningIn}
+            error={error}
+          />
         ) : currentTrip ? (
           /* Screen 2: Trip Detail & Multi-person Photo Uploader / Gallery */
           <TripDetail
@@ -231,8 +282,10 @@ export default function App() {
           © 2025 여행 사진 저장소. 모든 사진은 Google Drive™ 에 안전하게 보관됩니다.
         </div>
         <div className="flex items-center space-x-3">
-          <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-          <span className="text-[11px] font-bold text-slate-500">Google Drive 동기화 활성</span>
+          <div className={`w-2 h-2 rounded-full animate-pulse ${isDemo ? 'bg-amber-500' : 'bg-emerald-500'}`}></div>
+          <span className="text-[11px] font-bold text-slate-500">
+            {isDemo ? '로컬 저장소 모드' : 'Google Drive 동기화 활성'}
+          </span>
         </div>
       </footer>
 
