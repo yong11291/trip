@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { User } from 'firebase/auth';
 import { UserProfile, TripFolder } from './types';
 import { initAuth, googleSignIn, logout, getAccessToken, setCachedAccessToken } from './lib/auth';
 import { getTripFolders, createTripFolder, deleteTripFolder } from './lib/driveApi';
@@ -31,16 +30,11 @@ export default function App() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isCreatingTrip, setIsCreatingTrip] = useState(false);
 
-  // Initialize Firebase Auth listener
+  // Initialize Auth listener
   useEffect(() => {
     const unsubscribe = initAuth(
-      (firebaseUser: User, accessToken: string) => {
-        setUser({
-          uid: firebaseUser.uid,
-          displayName: firebaseUser.displayName,
-          email: firebaseUser.email,
-          photoURL: firebaseUser.photoURL,
-        });
+      (authUser: UserProfile, accessToken: string) => {
+        setUser(authUser);
         setToken(accessToken);
         setIsAuthLoading(false);
       },
@@ -52,7 +46,9 @@ export default function App() {
     );
 
     return () => {
-      unsubscribe();
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
     };
   }, []);
 
