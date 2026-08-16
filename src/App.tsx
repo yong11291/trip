@@ -110,7 +110,14 @@ export default function App() {
     } catch (err: unknown) {
       console.error('Sign in failed:', err);
       if (err instanceof Error) {
-        setError(`로그인 실패: ${err.message}`);
+        const msg = err.message || '';
+        if (msg.includes('Popup window closed') || msg.includes('popup_closed_by_user')) {
+          setError('Google 로그인 창이 닫혔습니다. 로그인 버튼을 누른 후 표시되는 팝업 창에서 계정을 선택하고 권한을 승인해 주세요.');
+        } else if (msg.includes('popup_blocked') || msg.includes('Popup blocked')) {
+          setError('브라우저에서 팝업이 차단되었습니다. 주소창 우측에서 팝업 허용 후 다시 시도해 주세요.');
+        } else {
+          setError(`로그인 안내: ${err.message}`);
+        }
       }
     } finally {
       setIsSigningIn(false);
