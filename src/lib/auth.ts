@@ -212,7 +212,7 @@ export const googleSignIn = async (): Promise<{ user: UserProfile; accessToken: 
   try {
     // Try Google Identity Services first (avoids Firebase unauthorized-domain restriction)
     return await signInWithGIS();
-  } catch (gisError) {
+  } catch (gisError: unknown) {
     console.warn('GIS sign in error, trying Firebase Auth fallback:', gisError);
 
     try {
@@ -242,11 +242,15 @@ export const googleSignIn = async (): Promise<{ user: UserProfile; accessToken: 
       return { user: userProfile, accessToken: cachedAccessToken };
     } catch (fbError: unknown) {
       console.error('Firebase Auth sign in error:', fbError);
-      // Re-throw original GIS or informative error
+      
+      const combinedMsg = ((gisError instanceof Error ? gisError.message : '') + ' ' + (fbError instanceof Error ? fbError.message : '')).toLowerCase();
+      if (combinedMsg.includes('access_denied') || combinedMsg.includes('승인 오류') || combinedMsg.includes('blocked') || combinedMsg.includes('차단')) {
+        throw new Error('Google 보안 설정에서 앱이 승인되지 않았거나 검수 단계입니다. Google 로그인 팝업 창 하단의 [고급(Advanced)] → [계속(안전하지 않은 페이지로 이동)]을 누르시면 정상 진입하실 수 있습니다.');
+      }
       if (fbError instanceof Error && fbError.message.includes('unauthorized-domain')) {
         throw new Error('Google 로그인이 완료되지 않았습니다. 팝업 차단이 설정되어 있다면 팝업을 허용하고 다시 시도해 주세요.');
       }
-      throw gisError instanceof Error ? gisError : fbError;
+      throw gisError instanceof Error ? gisError : (fbError instanceof Error ? fbError : new Error('로그인에 실패했습니다.'));
     }
   }
 };
